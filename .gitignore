@@ -1,0 +1,58 @@
+# AutoHotKey
+*.ahk
+*.ahk1
+
+# Debug Folder
+AuthAlwaysOnTop/
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Bb]in/
+[Oo]bj/
+Debug*/
+Release*/
+x64/
+x86/
+ipch/
+*.ilk
+*.pdb
+*.ipdb
+*.iobj
+*.idb
+*.log
+*.sbr
+
+# Visual Studio Code
+.vscode/
+
+# Others
+*.exe
+*.dll
+*.lib
+*.obj
+*.pch
+*.tmp
+*.cache
+*.manifest
+*.tlog/
+*.lastbuildstate
+
+# Mac files
+.DS_Store
+
+# JetBrains Rider
+.idea/
+
+# NuGet Packages
+*.nupkg
+packages/
+
+# Backup files
+*~
