@@ -3,7 +3,7 @@
 *.ahk1
 
 # Debug Folder
-AuthAlwaysOnTop/
+AuthAlwaysOnTop/x64/
 
 # Visual Studio
 .vs/
