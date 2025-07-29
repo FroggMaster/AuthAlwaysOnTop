@@ -23,6 +23,9 @@ HWND hWndMain;
 NOTIFYICONDATA nid = { 0 };
 HWINEVENTHOOK hEventHook = NULL;
 
+// Named mutex to ensure a single instance
+HANDLE hMutex = NULL;
+
 // Config persistence
 bool gTrayIconVisible = true;
 TCHAR configPath[MAX_PATH] = { 0 };
@@ -215,8 +218,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
-    hInst = hInstance;
+    // Ensure only one instance runs
+    hMutex = CreateMutex(NULL, FALSE, _T("AuthAlwaysOnTop_Mutex"));
+    if (hMutex == NULL || GetLastError() == ERROR_ALREADY_EXISTS) {
+        //MessageBox(NULL, _T("The application is already running."), _T("AuthAlwaysOnTop"), MB_ICONEXCLAMATION | MB_OK);
+        return 0;
+    }
 
+    hInst = hInstance;
     GetConfigPath();  // Resolve full path to config.ini
 
     WNDCLASS wc = { 0 };
@@ -224,7 +233,6 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     wc.hInstance = hInstance;
     wc.lpszClassName = _T("FastTrayClass");
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-
     RegisterClass(&wc);
 
     hWndMain = CreateWindowEx(
@@ -254,6 +262,11 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
+    }
+
+    // Release the mutex on exit
+    if (hMutex) {
+        CloseHandle(hMutex);
     }
 
     return 0;
