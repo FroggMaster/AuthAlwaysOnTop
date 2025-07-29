@@ -3,17 +3,41 @@
 #include <tchar.h>
 #include <tlhelp32.h>
 #include <strsafe.h>
+#include <shlwapi.h>
 #include "resource.h"
 
-#define WM_TRAYICON (WM_USER + 1)
-#define ID_TRAY_EXIT 1001
+#pragma comment(lib, "Shlwapi.lib")
+
+#define WM_TRAYICON      (WM_USER + 1)
+#define ID_TRAY_EXIT     1001
+#define ID_TRAY_TOGGLE   1002
+#define ID_TRAY_HELP     1003
+#define ID_HOTKEY_TOGGLE 2001
+
+#ifndef MOD_WIN
+#define MOD_WIN 0x0008
+#endif
 
 HINSTANCE hInst;
 HWND hWndMain;
 NOTIFYICONDATA nid = { 0 };
 HWINEVENTHOOK hEventHook = NULL;
 
-// Helper: Checks if a window belongs to CredentialUIBroker.exe
+// Config persistence
+bool gTrayIconVisible = true;
+TCHAR configPath[MAX_PATH] = { 0 };
+const TCHAR* CONFIG_SECTION = _T("Settings");
+const TCHAR* CONFIG_KEY = _T("TrayIconVisible");
+
+// Resolve config.ini to EXE directory
+void GetConfigPath() {
+    TCHAR exePath[MAX_PATH];
+    GetModuleFileName(NULL, exePath, MAX_PATH);
+    PathRemoveFileSpec(exePath);
+    PathCombine(configPath, exePath, _T("config.ini"));
+}
+
+// Checks if a window belongs to CredentialUIBroker.exe
 bool IsCredentialUIBrokerWindow(HWND hWnd) {
     DWORD pid = 0;
     GetWindowThreadProcessId(hWnd, &pid);
@@ -36,83 +60,102 @@ bool IsCredentialUIBrokerWindow(HWND hWnd) {
     return result;
 }
 
-// Helper: Brings a window to the foreground and activates it more reliably
+// Brings a window to the foreground reliably
 void ForceToForeground(HWND hwnd) {
     if (!IsWindow(hwnd)) return;
 
     DWORD targetThreadId = GetWindowThreadProcessId(hwnd, NULL);
     DWORD currentThreadId = GetCurrentThreadId();
 
-    // Attach input threads if needed
     if (targetThreadId != currentThreadId)
         AttachThreadInput(currentThreadId, targetThreadId, TRUE);
 
-    // Restore/show window
     if (IsIconic(hwnd))
         ShowWindow(hwnd, SW_RESTORE);
     else
         ShowWindow(hwnd, SW_SHOW);
 
-    // Force Z-order toggle without activating
     SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
-    // First attempt to bring window to foreground
     BOOL fgResult = SetForegroundWindow(hwnd);
 
-    // If failed to set foreground, simulate a harmless keypress to unlock foreground rights
     if (!fgResult) {
         INPUT inputs[2] = {};
-
-        // Press SHIFT down
         inputs[0].type = INPUT_KEYBOARD;
         inputs[0].ki.wVk = VK_SHIFT;
-        inputs[0].ki.dwFlags = 0;
-
-        // Release SHIFT
         inputs[1].type = INPUT_KEYBOARD;
         inputs[1].ki.wVk = VK_SHIFT;
         inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-
         SendInput(2, inputs, sizeof(INPUT));
-
-        Sleep(10); // Short delay
-
-        // Try again
+        Sleep(10);
         SetForegroundWindow(hwnd);
     }
 
-    // Extra: Bring window to top, focus and activate
     BringWindowToTop(hwnd);
     SetActiveWindow(hwnd);
     SetFocus(hwnd);
 
-    // Detach input threads
     if (targetThreadId != currentThreadId)
         AttachThreadInput(currentThreadId, targetThreadId, FALSE);
 }
 
-// Event callback: called when a window is created
+// Config read/write
+void LoadTrayIconSetting() {
+    TCHAR value[8] = { 0 };
+    GetPrivateProfileString(CONFIG_SECTION, CONFIG_KEY, _T("1"), value, 8, configPath);
+    gTrayIconVisible = (_ttoi(value) != 0);
+}
+
+void SaveTrayIconSetting() {
+    WritePrivateProfileString(CONFIG_SECTION, CONFIG_KEY, gTrayIconVisible ? _T("1") : _T("0"), configPath);
+}
+
+// Tray icon
+void InitTrayIcon(HWND hwnd) {
+    nid.cbSize = sizeof(NOTIFYICONDATA);
+    nid.hWnd = hwnd;
+    nid.uID = 1;
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    nid.uCallbackMessage = WM_TRAYICON;
+    nid.hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_ICON5));
+    _tcscpy_s(nid.szTip, _T("AuthAlwaysOnTop"));
+    Shell_NotifyIcon(NIM_ADD, &nid);
+}
+
+void SetTrayIconVisible(HWND hwnd, bool visible) {
+    if (visible && !gTrayIconVisible) {
+        InitTrayIcon(hwnd);
+    }
+    else if (!visible && gTrayIconVisible) {
+        Shell_NotifyIcon(NIM_DELETE, &nid);
+    }
+    gTrayIconVisible = visible;
+    SaveTrayIconSetting();
+}
+
+// Event callback
 void CALLBACK WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DWORD, DWORD) {
     if (event == EVENT_OBJECT_CREATE && hwnd && IsWindow(hwnd)) {
         if (IsCredentialUIBrokerWindow(hwnd)) {
-            // Debug logging
             OutputDebugString(_T("CredentialUIBroker window detected. Attempting to bring to front.\n"));
             ForceToForeground(hwnd);
         }
     }
 }
 
+// Tray menu
 void ShowTrayMenu(HWND hwnd) {
     POINT pt;
     GetCursorPos(&pt);
 
     HMENU hMenu = CreatePopupMenu();
+    AppendMenu(hMenu, MF_STRING, ID_TRAY_TOGGLE, gTrayIconVisible ? _T("Hide Tray Icon") : _T("Show Tray Icon"));
+    AppendMenu(hMenu, MF_STRING, ID_TRAY_HELP, _T("Help"));
     AppendMenu(hMenu, MF_STRING, ID_TRAY_EXIT, _T("Exit"));
 
-    // Bring hidden window to foreground (required for menu to behave correctly)
     SetForegroundWindow(hwnd);
     TrackPopupMenu(hMenu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, pt.x, pt.y, 0, hwnd, NULL);
     PostMessage(hwnd, WM_NULL, 0, 0);
@@ -129,16 +172,38 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         break;
 
     case WM_COMMAND:
-        if (LOWORD(wParam) == ID_TRAY_EXIT) {
+        switch (LOWORD(wParam)) {
+        case ID_TRAY_TOGGLE:
+            SetTrayIconVisible(hwnd, !gTrayIconVisible);
+            break;
+        case ID_TRAY_HELP:
+            MessageBox(hwnd,
+                _T("AuthAlwaysOnTop Help\n\n")
+                _T("Hotkey: Ctrl + Win + Alt + ScrollLock\n")
+                _T("Use this hotkey to toggle the tray icon visibility at any time.\n\n")
+                _T("You can also use the tray menu or config.ini to control the tray icon."),
+                _T("Help"),
+                MB_OK | MB_ICONINFORMATION);
+            break;
+        case ID_TRAY_EXIT:
             Shell_NotifyIcon(NIM_DELETE, &nid);
             if (hEventHook) UnhookWinEvent(hEventHook);
+            UnregisterHotKey(hwnd, ID_HOTKEY_TOGGLE);
             PostQuitMessage(0);
+            break;
+        }
+        break;
+
+    case WM_HOTKEY:
+        if (wParam == ID_HOTKEY_TOGGLE) {
+            SetTrayIconVisible(hwnd, !gTrayIconVisible);
         }
         break;
 
     case WM_DESTROY:
         Shell_NotifyIcon(NIM_DELETE, &nid);
         if (hEventHook) UnhookWinEvent(hEventHook);
+        UnregisterHotKey(hwnd, ID_HOTKEY_TOGGLE);
         PostQuitMessage(0);
         break;
 
@@ -149,19 +214,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return 0;
 }
 
-void InitTrayIcon(HWND hwnd) {
-    nid.cbSize = sizeof(NOTIFYICONDATA);
-    nid.hWnd = hwnd;
-    nid.uID = 1;
-    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_ICON5));
-    _tcscpy_s(nid.szTip, _T("AuthAlwaysOnTop"));
-    Shell_NotifyIcon(NIM_ADD, &nid);
-}
-
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     hInst = hInstance;
+
+    GetConfigPath();  // Resolve full path to config.ini
 
     WNDCLASS wc = { 0 };
     wc.lpfnWndProc = WndProc;
@@ -171,7 +227,6 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
 
     RegisterClass(&wc);
 
-    // Create a hidden but valid window for tray interaction
     hWndMain = CreateWindowEx(
         0,
         wc.lpszClassName,
@@ -182,9 +237,13 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         NULL, NULL, hInstance, NULL
     );
 
-    InitTrayIcon(hWndMain);
+    LoadTrayIconSetting();
+    if (gTrayIconVisible) {
+        InitTrayIcon(hWndMain);
+    }
 
-    // Set up event hook for window creation
+    RegisterHotKey(hWndMain, ID_HOTKEY_TOGGLE, MOD_CONTROL | MOD_WIN | MOD_ALT, VK_SCROLL);
+
     hEventHook = SetWinEventHook(
         EVENT_OBJECT_CREATE, EVENT_OBJECT_CREATE,
         NULL, WinEventProc,
