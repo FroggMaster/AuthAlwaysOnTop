@@ -2,7 +2,7 @@
 #include <shellapi.h>
 #include <tchar.h>
 #include <tlhelp32.h>
-#include <strsafe.h> // For StringCchPrintf
+#include <strsafe.h>
 #include "resource.h"
 
 #define WM_TRAYICON (WM_USER + 1)
@@ -94,51 +94,6 @@ void ForceToForeground(HWND hwnd) {
         AttachThreadInput(currentThreadId, targetThreadId, FALSE);
 }
 
-
-//void ClickInsideWindow(HWND hwnd) {
-//    if (!IsWindow(hwnd) || !IsWindowVisible(hwnd))
-//        return;
-//
-//    RECT rect;
-//    if (!GetWindowRect(hwnd, &rect))
-//        return;
-//
-//    // Calculate center of window
-//    int x = rect.left + (rect.right - rect.left) / 2;
-//    int y = rect.top + (rect.bottom - rect.top) / 2;
-//
-//    // Save current cursor position
-//    POINT originalPos;
-//    GetCursorPos(&originalPos);
-//
-//    // Move to target window center
-//    SetCursorPos(x, y);
-//    Sleep(50); // Slight delay for realism
-//
-//    // Simulate mouse click
-//    INPUT inputs[2] = {};
-//
-//    inputs[0].type = INPUT_MOUSE;
-//    inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-//    inputs[0].mi.dx = 0;
-//    inputs[0].mi.dy = 0;
-//    inputs[0].mi.mouseData = 0;
-//    inputs[0].mi.dwExtraInfo = GetMessageExtraInfo();
-//
-//    inputs[1].type = INPUT_MOUSE;
-//    inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-//    inputs[1].mi.dx = 0;
-//    inputs[1].mi.dy = 0;
-//    inputs[1].mi.mouseData = 0;
-//    inputs[1].mi.dwExtraInfo = GetMessageExtraInfo();
-//
-//    SendInput(2, inputs, sizeof(INPUT));
-//
-//    // Optional: Restore original mouse position
-//    SetCursorPos(originalPos.x, originalPos.y);
-//}
-
-
 // Event callback: called when a window is created
 void CALLBACK WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DWORD, DWORD) {
     if (event == EVENT_OBJECT_CREATE && hwnd && IsWindow(hwnd)) {
@@ -146,7 +101,6 @@ void CALLBACK WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DW
             // Debug logging
             OutputDebugString(_T("CredentialUIBroker window detected. Attempting to bring to front.\n"));
             ForceToForeground(hwnd);
-            //ClickInsideWindow(hwnd);
         }
     }
 }
@@ -161,7 +115,7 @@ void ShowTrayMenu(HWND hwnd) {
     // Bring hidden window to foreground (required for menu to behave correctly)
     SetForegroundWindow(hwnd);
     TrackPopupMenu(hMenu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, pt.x, pt.y, 0, hwnd, NULL);
-    PostMessage(hwnd, WM_NULL, 0, 0); // Allow proper dismissal on click outside
+    PostMessage(hwnd, WM_NULL, 0, 0);
 
     DestroyMenu(hMenu);
 }
@@ -201,8 +155,8 @@ void InitTrayIcon(HWND hwnd) {
     nid.uID = 1;
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_ICON5)); // Use your custom icon
-    _tcscpy_s(nid.szTip, _T("Auth Always On Top"));
+    nid.hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_ICON5));
+    _tcscpy_s(nid.szTip, _T("AuthAlwaysOnTop"));
     Shell_NotifyIcon(NIM_ADD, &nid);
 }
 
@@ -222,7 +176,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
         0,
         wc.lpszClassName,
         _T("FastTrayApp"),
-        WS_POPUP,             // Important for hidden interaction
+        WS_POPUP,
         CW_USEDEFAULT, CW_USEDEFAULT,
         0, 0,
         NULL, NULL, hInstance, NULL
